@@ -2,7 +2,7 @@
 
 CONFIG="config.mk"
 PREFIX="/usr/local"
-VERSION=$(grep "define PNGQUANT_VERSION" pngquant.c | grep -Eo "[12]\.[0-9.]+")
+VERSION=$(grep LIQ_VERSION_STRING lib/libimagequant.h | grep -Eo "2\.[0-9.]+")
 
 DEBUG=
 SSE=auto
@@ -122,7 +122,7 @@ status() {
 # Append to CFLAGS if compiler supports flag, with optional prerequisite.
 # Fails on errors and warnings.
 conditional_cflags() {
-    if [ -z "$("$CC" -xc -S -o /dev/null $2 $1 <(echo) 2>&1)" ]; then
+    if [ -z "echo | $("$CC" -xc -S -o /dev/null $2 $1 2>&1)" ]; then
         cflags "$1"
     fi
 }
@@ -221,8 +221,8 @@ error() {
 echo
 
 # basic check
-if ! "$CC" -xc -std=c99 <(echo "int main(){}") -o /dev/null &> /dev/null; then
-    error "Compiler" "$CC is no C compiler"
+if ! echo "int main(){}" | "$CC" -xc -std=c99 -o /dev/null - &> /dev/null; then
+    error "Compiler" "$CC failed to compile anything (make sure it's installed and supports C99)"
 fi
 
 status "Compiler" "$CC"
@@ -230,7 +230,6 @@ status "Compiler" "$CC"
 # init flags
 CFLAGS=${CFLAGS:--O3 -fno-math-errno -funroll-loops -fomit-frame-pointer -Wall}
 cflags "-std=c99 -I."
-lflags "-lm lib/libimagequant.a"
 
 # DEBUG
 if [ -z "$DEBUG" ]; then
@@ -264,8 +263,7 @@ fi
 
 # OpenMP
 if [ -n "$OPENMP" ]; then
-    if [[ "$("$CC" -xc -E -fopenmp <(echo -e \
-          "#ifdef _OPENMP
+    if [[ "$("$CC" -xc -E -fopenmp <(echo "#ifdef _OPENMP
            #include <omp.h>
            #endif") 2>&1)" =~ "omp_get_thread_num" ]]; then
         cflags "-fopenmp"
@@ -286,7 +284,7 @@ if [[ "$OSTYPE" =~ "darwin" ]]; then
     cflags "-mmacosx-version-min=10.6"
     lflags "-mmacosx-version-min=10.6"
 
-    if [ "$COCOA_READER" != 0 ]; then
+    if [ "$COCOA_READER" != 0 ] && "$CC" 2>/dev/null 1>/dev/null -xc -E <(echo "#import <Cocoa/Cocoa.h>"); then
         COCOA_READER=1
         cflags "-DUSE_COCOA=1"
         lflags "-framework Cocoa"
@@ -298,7 +296,9 @@ fi
 
 # pairs of possible *.h and lib*.so locations
 DIRS=("/usr/local/include /usr/local/lib"
-      "/usr/include /usr/lib")
+      "/usr/include /usr/lib"
+      "/opt/local/include /opt/local/lib" # macports
+      )
 
 if [[ "$OSTYPE" =~ "darwin" ]]; then
     SOLIBSUFFIX=dylib

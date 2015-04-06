@@ -1,10 +1,10 @@
 Name:           pngquant
-Version:        1.8.3
+Version:        2.3.6
 Release:        1%{?dist}
 Summary:        PNG quantization tool for reducing image file size
 License:        BSD
 URL:            http://pngquant.org
-Source0:        https://github.com/pornel/improved-pngquant/tarball/%{version}
+Source0:        https://github.com/pornel/pngquant/archive/%{version}.tar.gz
 BuildRequires:  libpng-devel%{?_isa} >= 1.2.46-1
 BuildRequires:  zlib-devel%{?_isa} >= 1.2.3-1
 BuildRequires:  gcc%{?_isa} >= 4.2-1
@@ -19,17 +19,19 @@ degrade well in Internet Explorer 6. Quantized files are often 40-70
 percent smaller than their 24/32-bit version. pngquant uses the
 median cut algorithm.
 
-
 %prep
-%setup -q -n pornel-improved-pngquant-6f6e12c
+%setup -q -n pngquant-%{version}
 
 %build
+./configure --prefix=%{_prefix}
 make %{?_smp_mflags}
 
 
 %install
 rm -rf %{buildroot}
+mkdir -p %{buildroot}/%{_bindir}
 make install PREFIX=%{_prefix} DESTDIR=%{buildroot}
+install -Dpm0755 pngquant %{buildroot}/%{_bindir}/pngquant
 install -Dpm0644 pngquant.1 %{buildroot}/%{_mandir}/man1/pngquant.1
 
 
@@ -41,6 +43,9 @@ install -Dpm0644 pngquant.1 %{buildroot}/%{_mandir}/man1/pngquant.1
 
 
 %changelog
+
+* Fri Sep 12 2014 Michael Dec <grepwood@sucs.org> 1.8.3-1
+- Update to latest upstream version and corrected the .spec
 
 * Thu May 03 2012 Craig Barnes <cr@igbarn.es> - 1.7.2-1
 - Update to latest upstream version
@@ -55,4 +60,3 @@ install -Dpm0644 pngquant.1 %{buildroot}/%{_mandir}/man1/pngquant.1
 
 * Wed Dec 28 2011 Craig Barnes <cr@igbarn.es> - 1.6.2-1
 - Initial package
-

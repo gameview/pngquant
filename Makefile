@@ -1,7 +1,7 @@
 -include config.mk
 
 BIN ?= pngquant
-BINPREFIX = $(PREFIX)/bin
+BINPREFIX = $(DESTDIR)$(PREFIX)/bin
 
 OBJS = pngquant.o rwpng.o
 COCOA_OBJS = rwpng_cocoa.o
@@ -24,16 +24,21 @@ DLLDEF=libimagequant_dll.def
 
 all: $(BIN)
 
-$(STATICLIB):: config.mk
+staticlib:
 	$(MAKE) -C lib static
+
+$(STATICLIB): config.mk staticlib
 
 $(OBJS): $(wildcard *.h) config.mk
 
 rwpng_cocoa.o: rwpng_cocoa.m
-	$(CC) -Wno-enum-conversion -c $(CFLAGS) -o $@ $< || clang -Wno-enum-conversion -c -O3 -o $@ $<
+	$(CC) -Wno-enum-conversion -c $(CFLAGS) -o $@ $< || clang -Wno-enum-conversion -c -O3 $(CFLAGS) -o $@ $<
 
-$(BIN): $(STATICLIB) $(OBJS)
-	$(CC) $(OBJS) $(LDFLAGS) -o $@
+$(BIN): $(OBJS) $(STATICLIB)
+	$(CC) $^ $(LDFLAGS) -o $@
+
+test: $(BIN)
+	./test/test.sh ./test $(BIN)
 
 dist: $(TARFILE)
 
@@ -47,14 +52,15 @@ $(TARFILE): $(DISTFILES)
 	-shasum $(TARFILE)
 
 install: $(BIN)
-	install -m 0755 -p $(BIN) $(BINPREFIX)/$(BIN)
+	-mkdir -p '$(BINPREFIX)'
+	install -m 0755 -p '$(BIN)' '$(BINPREFIX)/$(BIN)'
 
 uninstall:
-	rm -f $(BINPREFIX)/$(BIN)
+	rm -f '$(BINPREFIX)/$(BIN)'
 
 clean:
 	$(MAKE) -C lib clean
-	rm -f $(BIN) $(OBJS) $(COCOA_OBJS) $(STATICLIB) $(TARFILE)
+	rm -f '$(BIN)' $(OBJS) $(COCOA_OBJS) $(STATICLIB) $(TARFILE)
 
 distclean: clean
 	$(MAKE) -C lib distclean
@@ -65,5 +71,5 @@ ifeq ($(filter %clean %distclean, $(MAKECMDGOALS)), )
 	./configure
 endif
 
-.PHONY: all clean dist distclean dll install uninstall
+.PHONY: all clean dist distclean dll install uninstall test staticlib
 .DELETE_ON_ERROR:

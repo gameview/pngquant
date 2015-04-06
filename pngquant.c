@@ -39,10 +39,11 @@
 **
 */
 
-#define PNGQUANT_VERSION "2.3.0 (July 2014)"
+#define PNGQUANT_VERSION LIQ_VERSION_STRING " (March 2015)"
 
 #define PNGQUANT_USAGE "\
-usage:  pngquant [options] [ncolors] [pngfile [pngfile ...]]\n\n\
+usage:  pngquant [options] [ncolors] -- pngfile [pngfile ...]\n\
+        pngquant [options] [ncolors] - >stdout <stdin\n\n\
 options:\n\
   --force           overwrite existing output files (synonym: -f)\n\
   --skip-if-larger  only save converted files if they're smaller than original\n\
@@ -69,6 +70,7 @@ use --force to overwrite. See man page for full list of options.\n"
 #include <stdarg.h>
 #include <stdbool.h>
 #include <getopt.h>
+#include <unistd.h>
 
 extern char *optarg;
 extern int optind, opterr;
@@ -94,7 +96,7 @@ struct pngquant_options {
     liq_log_callback_function *log_callback;
     void *log_callback_user_info;
     float floyd;
-    bool using_stdin, force, fast_compression, ie_mode,
+    bool using_stdin, using_stdout, force, fast_compression, ie_mode,
         min_quality_limit, skip_if_larger,
         verbose;
 };
@@ -404,11 +406,11 @@ int main(int argc, char *argv[])
 
     if (argn >= argc) {
         if (argn > 1) {
-            fputs("No input files specified. See -h for help.\n", stderr);
+            fputs("No input files specified.\n", stderr);
         } else {
             print_full_version(stderr);
-            print_usage(stderr);
         }
+        print_usage(stderr);
         return MISSING_ARGUMENT;
     }
 
@@ -442,12 +444,8 @@ int main(int argc, char *argv[])
 
     if (argn == argc || (argn == argc-1 && 0==strcmp(argv[argn],"-"))) {
         options.using_stdin = true;
+        options.using_stdout = !output_file_path;
         argn = argc-1;
-    }
-
-    if (options.using_stdin && output_file_path) {
-        fputs("--output can't be mixed with stdin\n", stderr);
-        return INVALID_ARGUMENT;
     }
 
     const int num_files = argc-argn;
@@ -490,17 +488,17 @@ int main(int argc, char *argv[])
 
         const char *outname = output_file_path;
         char *outname_free = NULL;
-        if (!options.using_stdin) {
+        if (!options.using_stdout) {
             if (!outname) {
                 outname = outname_free = add_filename_extension(filename, newext);
             }
             if (!options.force && file_exists(outname)) {
-                fprintf(stderr, "  error:  %s exists; not overwriting\n", outname);
+                fprintf(stderr, "  error: '%s' exists; not overwriting\n", outname);
                 retval = NOT_OVERWRITING_ERROR;
             }
         }
 
-        if (!retval) {
+        if (SUCCESS == retval) {
             retval = pngquant_file(filename, outname, &opts);
         }
 
@@ -549,14 +547,14 @@ pngquant_error pngquant_file(const char *filename, const char *outname, struct p
 
     liq_image *input_image = NULL;
     png24_image input_image_rwpng = {};
-    bool keep_input_pixels = options->skip_if_larger || (options->using_stdin && options->min_quality_limit); // original may need to be output to stdout
-    if (!retval) {
+    bool keep_input_pixels = options->skip_if_larger || (options->using_stdout && options->min_quality_limit); // original may need to be output to stdout
+    if (SUCCESS == retval) {
         retval = read_image(options->liq, filename, options->using_stdin, &input_image_rwpng, &input_image, keep_input_pixels, options->verbose);
     }
 
     int quality_percent = 90; // quality on 0-100 scale, updated upon successful remap
     png8_image output_image = {};
-    if (!retval) {
+    if (SUCCESS == retval) {
         verbose_printf(options, "  read %luKB file", (input_image_rwpng.file_size+1023UL)/1024UL);
 
 #if USE_LCMS
@@ -582,7 +580,7 @@ pngquant_error pngquant_file(const char *filename, const char *outname, struct p
             liq_set_dithering_level(remap, options->floyd);
 
             retval = prepare_output_image(remap, input_image, &output_image);
-            if (!retval) {
+            if (SUCCESS == retval) {
                 if (LIQ_OK != liq_write_remapped_image_rows(remap, input_image, output_image.row_pointers)) {
                     retval = OUT_OF_MEMORY_ERROR;
                 }
@@ -601,13 +599,13 @@ pngquant_error pngquant_file(const char *filename, const char *outname, struct p
         }
     }
 
-    if (!retval) {
+    if (SUCCESS == retval) {
 
         if (options->skip_if_larger) {
             // this is very rough approximation, but generally avoid losing more quality than is gained in file size.
             // Quality is squared, because even greater savings are needed to justify big quality loss.
             double quality = quality_percent/100.0;
-            output_image.maximum_file_size = input_image_rwpng.file_size * quality*quality;
+            output_image.maximum_file_size = (input_image_rwpng.file_size-1) * quality*quality;
         }
 
         output_image.fast_compression = options->fast_compression;
@@ -619,14 +617,12 @@ pngquant_error pngquant_file(const char *filename, const char *outname, struct p
         }
     }
 
-    if (TOO_LARGE_FILE == retval || (TOO_LOW_QUALITY == retval && options->using_stdin)) {
+    if (options->using_stdout && keep_input_pixels && (TOO_LARGE_FILE == retval || TOO_LOW_QUALITY == retval)) {
         // when outputting to stdout it'd be nasty to create 0-byte file
         // so if quality is too low, output 24-bit original
-        if (keep_input_pixels) {
-            pngquant_error write_retval = write_image(NULL, &input_image_rwpng, outname, options);
-            if (write_retval) {
-                retval = write_retval;
-            }
+        pngquant_error write_retval = write_image(NULL, &input_image_rwpng, outname, options);
+        if (write_retval) {
+            retval = write_retval;
         }
     }
 
@@ -676,10 +672,23 @@ static char *add_filename_extension(const char *filename, const char *newext)
     if (!outname) return NULL;
 
     strncpy(outname, filename, x);
-    if (strncmp(outname+x-4, ".png", 4) == 0 || strncmp(outname+x-4, ".PNG", 4) == 0)
+    if (strncmp(outname+x-4, ".png", 4) == 0 || strncmp(outname+x-4, ".PNG", 4) == 0) {
         strcpy(outname+x-4, newext);
-    else
+    } else {
         strcpy(outname+x, newext);
+    }
+
+    return outname;
+}
+
+static char *temp_filename(const char *basename) {
+    size_t x = strlen(basename);
+
+    char *outname = malloc(x+1+4);
+    if (!outname) return NULL;
+
+    strcpy(outname, basename);
+    strcpy(outname+x, ".tmp");
 
     return outname;
 }
@@ -691,10 +700,32 @@ static void set_binary_mode(FILE *fp)
 #endif
 }
 
+static const char *filename_part(const char *path)
+{
+    const char *outfilename = strrchr(path, '/');
+    if (outfilename) {
+        return outfilename+1;
+    } else {
+        return path;
+    }
+}
+
+static bool replace_file(const char *from, const char *to, const bool force) {
+#if defined(WIN32) || defined(__WIN32__)
+    if (force) {
+        // On Windows rename doesn't replace
+        unlink(to);
+    }
+#endif
+    return (0 == rename(from, to));
+}
+
 static pngquant_error write_image(png8_image *output_image, png24_image *output_image24, const char *outname, struct pngquant_options *options)
 {
     FILE *outfile;
-    if (options->using_stdin) {
+    char *tempname = NULL;
+
+    if (options->using_stdout) {
         set_binary_mode(stdout);
         outfile = stdout;
 
@@ -704,23 +735,19 @@ static pngquant_error write_image(png8_image *output_image, png24_image *output_
             verbose_printf(options, "  writing truecolor image to stdout");
         }
     } else {
+        tempname = temp_filename(outname);
+        if (!tempname) return OUT_OF_MEMORY_ERROR;
 
-        if ((outfile = fopen(outname, "wb")) == NULL) {
-            fprintf(stderr, "  error:  cannot open %s for writing\n", outname);
+        if ((outfile = fopen(tempname, "wb")) == NULL) {
+            fprintf(stderr, "  error: cannot open '%s' for writing\n", tempname);
+            free(tempname);
             return CANT_WRITE_ERROR;
         }
 
-        const char *outfilename = strrchr(outname, '/');
-        if (outfilename) {
-            outfilename++;
-        } else {
-            outfilename = outname;
-        }
-
         if (output_image) {
-            verbose_printf(options, "  writing %d-color image as %s", output_image->num_palette, outfilename);
+            verbose_printf(options, "  writing %d-color image as %s", output_image->num_palette, filename_part(outname));
         } else {
-            verbose_printf(options, "  writing truecolor image as %s", outfilename);
+            verbose_printf(options, "  writing truecolor image as %s", filename_part(outname));
         }
     }
 
@@ -734,12 +761,25 @@ static pngquant_error write_image(png8_image *output_image, png24_image *output_
         }
     }
 
-    if (retval && retval != TOO_LARGE_FILE) {
-        fprintf(stderr, "  error: failed writing image to %s\n", outname);
+    if (!options->using_stdout) {
+        fclose(outfile);
+
+        if (SUCCESS == retval) {
+            // Image has been written to a temporary file and then moved over destination.
+            // This makes replacement atomic and avoids damaging destination file on write error.
+            if (!replace_file(tempname, outname, options->force)) {
+                retval = CANT_WRITE_ERROR;
+            }
+        }
+
+        if (retval) {
+            unlink(tempname);
+        }
+        free(tempname);
     }
 
-    if (!options->using_stdin) {
-        fclose(outfile);
+    if (retval && retval != TOO_LARGE_FILE) {
+        fprintf(stderr, "  error: failed writing image to %s\n", outname);
     }
 
     return retval;
