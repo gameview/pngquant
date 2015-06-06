@@ -39,7 +39,7 @@
 **
 */
 
-#define PNGQUANT_VERSION LIQ_VERSION_STRING " (March 2015)"
+#define PNGQUANT_VERSION LIQ_VERSION_STRING " (June 2015)"
 
 #define PNGQUANT_USAGE "\
 usage:  pngquant [options] [ncolors] -- pngfile [pngfile ...]\n\
@@ -334,7 +334,7 @@ int main(int argc, char *argv[])
             case arg_iebug:
                 // opacities above 238 will be rounded up to 255, because IE6 truncates <255 to 0.
                 liq_set_min_opacity(options.liq, 238);
-                options.ie_mode = true;
+                fputs("  warning: the workaround for IE6 is deprecated\n", stderr);
                 break;
 
             case arg_transbug:
@@ -380,7 +380,7 @@ int main(int argc, char *argv[])
                 {
                     png24_image tmp = {};
                     if (SUCCESS != read_image(options.liq, optarg, false, &tmp, &options.fixed_palette_image, false, false)) {
-                        fprintf(stderr, "  error: Unable to load %s", optarg);
+                        fprintf(stderr, "  error: unable to load %s", optarg);
                         return INVALID_ARGUMENT;
                     }
                 }
@@ -808,7 +808,7 @@ static pngquant_error read_image(liq_attr *options, const char *filename, int us
     }
 
     if (retval) {
-        fprintf(stderr, "  error: rwpng_read_image() error %d\n", retval);
+        fprintf(stderr, "  error: cannot decode image %s\n", using_stdin ? "from stdin" : filename_part(filename));
         return retval;
     }
 

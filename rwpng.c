@@ -55,7 +55,7 @@
 #define omp_get_max_threads() 1
 #endif
 
-#if PNG_LIBPNG_VER < 10600
+#if PNG_LIBPNG_VER < 10500
 typedef png_const_charp png_const_bytep;
 #endif
 
@@ -605,7 +605,7 @@ static void rwpng_error_handler(png_structp png_ptr, png_const_charp msg)
      * regardless of whether _BSD_SOURCE or anything else has (or has not)
      * been defined. */
 
-    fprintf(stderr, "  error: %s\n", msg);
+    fprintf(stderr, "  error: %s (libpng failed)\n", msg);
     fflush(stderr);
 
     mainprog_ptr = png_get_error_ptr(png_ptr);

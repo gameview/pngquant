@@ -268,7 +268,7 @@ Returns the value set by `liq_set_speed()`.
 
     liq_error liq_set_min_opacity(liq_attr* attr, int min);
 
-Alpha values higher than this will be rounded to opaque. This is a workaround for Internet Explorer 6 that truncates semitransparent values to completely transparent. The default is `255` (no change). 238 is a suggested value.
+Alpha values higher than this will be rounded to opaque. This is a workaround for Internet Explorer 6, but because this browser is not used any more, this option is deprecated and will be removed. The default is `255` (no change).
 
 Returns `LIQ_VALUE_OUT_OF_RANGE` if the value is outside the 0-255 range.
 
@@ -447,6 +447,18 @@ Sets gamma correction for generated palette and remapped image. Must be > 0 and 
 Getters for `width`, `height` and `gamma` of the input image.
 
 If the input is invalid, these all return -1.
+
+---
+
+    liq_error liq_image_add_fixed_color(liq_image* img, liq_color color);
+
+Reserves a color in the output palette created from this image. It behaves as if the given color was used in the image and was very important.
+
+RGB values of `liq_color` are assumed to have the same gamma as the image.
+
+It must be called before the image is quantized.
+
+Returns error if more than 256 colors are added. If image is quantized to fewer colors than the number of fixed colors added, then excess fixed colors will be ignored.
 
 ---
 
