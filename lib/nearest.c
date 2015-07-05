@@ -1,3 +1,8 @@
+/*
+** © 2011-2015 by Kornel Lesiński.
+** All rights reserved.
+** See COPYRIGHT file for full license.
+*/
 
 #include "libimagequant.h"
 #include "pam.h"
@@ -123,7 +128,7 @@ LIQ_PRIVATE struct nearest_map *nearest_init(const colormap *map, const bool fas
             .exclude = i,
         };
         vp_search_node(root, &map->palette[i].acolor, &best);
-        handle->nearest_other_color_dist[i] = best.distance / 2.0;
+        handle->nearest_other_color_dist[i] = best.distance * best.distance / 4.0; // half of squared distance
     }
 
     return handle;
@@ -166,14 +171,13 @@ static void vp_search_node(const vp_node *node, const f_pixel *const needle, vp_
 
 LIQ_PRIVATE unsigned int nearest_search(const struct nearest_map *handle, const f_pixel *px, const int likely_colormap_index, float *diff) {
     const float guess_diff = colordifference(handle->palette[likely_colormap_index].acolor, *px);
-    const float guess_distance = sqrtf(guess_diff);
-    if (guess_distance < handle->nearest_other_color_dist[likely_colormap_index]) {
+    if (guess_diff < handle->nearest_other_color_dist[likely_colormap_index]) {
         if (diff) *diff = guess_diff;
         return likely_colormap_index;
     }
 
     vp_search_tmp best_candidate = {
-        .distance = guess_distance,
+        .distance = sqrtf(guess_diff),
         .idx = likely_colormap_index,
         .exclude = -1,
     };
