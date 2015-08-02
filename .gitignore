@@ -11,3 +11,4 @@ lib/libimagequant.a
 *.obj
 *.lib
 config.mk
+test/test

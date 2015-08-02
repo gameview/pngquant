@@ -1,7 +1,8 @@
 -include config.mk
 
 BIN ?= pngquant
-BINPREFIX = $(DESTDIR)$(PREFIX)/bin
+BINPREFIX ?= $(DESTDIR)$(PREFIX)/bin
+MANPREFIX ?= $(DESTDIR)$(PREFIX)/share/man
 
 OBJS = pngquant.o rwpng.o
 COCOA_OBJS = rwpng_cocoa.o
@@ -22,6 +23,8 @@ DLL=libimagequant.dll
 DLLIMP=libimagequant_dll.a
 DLLDEF=libimagequant_dll.def
 
+TESTBIN = test/test
+
 all: $(BIN)
 
 staticlib:
@@ -37,8 +40,11 @@ rwpng_cocoa.o: rwpng_cocoa.m
 $(BIN): $(OBJS) $(STATICLIB)
 	$(CC) $^ $(CFLAGS) $(LDFLAGS) -o $@
 
-test: $(BIN)
-	./test/test.sh ./test $(BIN)
+$(TESTBIN): test/test.o $(STATICLIB)
+	$(CC) $^ $(CFLAGS) $(LDFLAGS) -o $@
+
+test: $(BIN) $(TESTBIN)
+	./test/test.sh ./test $(BIN) $(TESTBIN)
 
 dist: $(TARFILE)
 
@@ -51,9 +57,11 @@ $(TARFILE): $(DISTFILES)
 	rm -rf $(TARNAME)
 	-shasum $(TARFILE)
 
-install: $(BIN)
+install: $(BIN) pngquant.1
 	-mkdir -p '$(BINPREFIX)'
+	-mkdir -p '$(MANPREFIX)/man1'
 	install -m 0755 -p '$(BIN)' '$(BINPREFIX)/$(BIN)'
+	cp pngquant.1 '$(MANPREFIX)/man1/'
 
 uninstall:
 	rm -f '$(BINPREFIX)/$(BIN)'

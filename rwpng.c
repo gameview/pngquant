@@ -35,6 +35,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 
 #include "png.h"
 #include "rwpng.h"
@@ -135,7 +136,7 @@ static void user_flush_data(png_structp png_ptr)
 }
 
 
-static png_bytepp rwpng_create_row_pointers(png_infop info_ptr, png_structp png_ptr, unsigned char *base, unsigned int height, unsigned int rowbytes)
+static png_bytepp rwpng_create_row_pointers(png_infop info_ptr, png_structp png_ptr, unsigned char *base, unsigned int height, png_size_t rowbytes)
 {
     if (!rowbytes) {
         rowbytes = png_get_rowbytes(png_ptr, info_ptr);
@@ -143,7 +144,7 @@ static png_bytepp rwpng_create_row_pointers(png_infop info_ptr, png_structp png_
 
     png_bytepp row_pointers = malloc(height * sizeof(row_pointers[0]));
     if (!row_pointers) return NULL;
-    for(unsigned int row = 0;  row < height;  ++row) {
+    for(size_t row = 0; row < height; row++) {
         row_pointers[row] = base + row * rowbytes;
     }
     return row_pointers;
@@ -222,7 +223,6 @@ pngquant_error rwpng_read_image24_libpng(FILE *infile, png24_image *mainprog_ptr
 
     png_read_info(png_ptr, info_ptr);  /* read all PNG info up to image data */
 
-
     /* alternatively, could make separate calls to png_get_image_width(),
      * etc., but want bit_depth and color_type for later [don't care about
      * compression_type and filter_type => NULLs] */
@@ -230,6 +230,11 @@ pngquant_error rwpng_read_image24_libpng(FILE *infile, png24_image *mainprog_ptr
     png_get_IHDR(png_ptr, info_ptr, &mainprog_ptr->width, &mainprog_ptr->height,
                  &bit_depth, &color_type, NULL, NULL, NULL);
 
+    // For overflow safety reject images that won't fit in 32-bit
+    if (mainprog_ptr->width > INT_MAX/mainprog_ptr->height) {
+        png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
+        return PNG_OUT_OF_MEMORY_ERROR;  /* not quite true, but whatever */
+    }
 
     /* expand palette images to RGB, low-bit-depth grayscale images to 8 bits,
      * transparency chunks to full alpha channel; strip 16-bit-per-sample
@@ -278,7 +283,7 @@ pngquant_error rwpng_read_image24_libpng(FILE *infile, png24_image *mainprog_ptr
 
     rowbytes = png_get_rowbytes(png_ptr, info_ptr);
 
-    if ((mainprog_ptr->rgba_data = malloc(rowbytes*mainprog_ptr->height)) == NULL) {
+    if ((mainprog_ptr->rgba_data = malloc(rowbytes * mainprog_ptr->height)) == NULL) {
         fprintf(stderr, "pngquant readpng:  unable to allocate image data\n");
         png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
         return PNG_OUT_OF_MEMORY_ERROR;

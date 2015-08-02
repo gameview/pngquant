@@ -134,8 +134,8 @@ LIQ_NONNULL static void liq_verbose_printf(const liq_attr *context, const char *
         char *buf = malloc(required_space * sizeof(char));
         va_start(va, fmt);
         if (buf) {
-            vsnprintf(buf, required_space, fmt, va);
-            va_end(va);
+        vsnprintf(buf, required_space, fmt, va);
+        va_end(va);
         } else {
             fprintf(stderr, "Could not allocate memory for printing message:\n");
             vfprintf(stderr, fmt, va);
@@ -591,7 +591,7 @@ LIQ_EXPORT liq_image *liq_image_create_rgba_rows(liq_attr *attr, void* rows[], i
         if (!CHECK_USER_POINTER(rows+i) || !CHECK_USER_POINTER(rows[i])) {
             liq_log_error(attr, "invalid row pointers");
             return NULL;
-        }
+    }
     }
     return liq_image_create_internal(attr, (rgba_pixel**)rows, NULL, NULL, width, height, gamma);
 }
@@ -897,6 +897,7 @@ LIQ_NONNULL static int compare_popularity(const void *ch1, const void *ch2)
 
 LIQ_NONNULL static void sort_palette_qsort(colormap *map, int start, int nelem)
 {
+    if (!nelem) return;
     qsort(map->palette + start, nelem, sizeof(map->palette[0]), compare_popularity);
 }
 
@@ -914,20 +915,29 @@ LIQ_NONNULL static void sort_palette(colormap *map, const liq_attr *options)
     */
     if (options->last_index_transparent) {
     	for(unsigned int i=0; i < map->colors; i++) {
-	    if (map->palette[i].acolor.a < 1.0/256.0) {
-			const unsigned int old = i, transparent_dest = map->colors-1;
+            if (map->palette[i].acolor.a < 1.0/256.0) {
+                const unsigned int old = i, transparent_dest = map->colors-1;
 
-			SWAP_PALETTE(map, transparent_dest, old);
+                SWAP_PALETTE(map, transparent_dest, old);
 
-			/* colors sorted by popularity make pngs slightly more compressible */
+                /* colors sorted by popularity make pngs slightly more compressible */
         		sort_palette_qsort(map, 0, map->colors-1);
-			return;
+                return;
             }
         }
     }
+
+    unsigned int non_fixed_colors = 0;
+    for(int i = 0; i < map->colors; i++) {
+        if (map->palette[i].fixed) {
+            break;
+        }
+        non_fixed_colors++;
+    }
+
     /* move transparent colors to the beginning to shrink trns chunk */
-    unsigned int num_transparent=0;
-    for(unsigned int i=0; i < map->colors; i++) {
+    unsigned int num_transparent = 0;
+    for(unsigned int i = 0; i < non_fixed_colors; i++) {
         if (map->palette[i].acolor.a < 255.0/256.0) {
             // current transparent color is swapped with earlier opaque one
             if (i != num_transparent) {
@@ -944,9 +954,9 @@ LIQ_NONNULL static void sort_palette(colormap *map, const liq_attr *options)
      * opaque and transparent are sorted separately
      */
     sort_palette_qsort(map, 0, num_transparent);
-    sort_palette_qsort(map, num_transparent, map->colors-num_transparent);
+    sort_palette_qsort(map, num_transparent, non_fixed_colors - num_transparent);
 
-    if (map->colors > 16) {
+    if (non_fixed_colors > 9 && map->colors > 16) {
         SWAP_PALETTE(map, 7, 1); // slightly improves compression
         SWAP_PALETTE(map, 8, 2);
         SWAP_PALETTE(map, 9, 3);
@@ -974,7 +984,7 @@ LIQ_NONNULL static void set_rounded_palette(liq_palette *const dest, colormap *c
 
         map->palette[x].acolor = to_f(gamma_lut, px); /* saves rounding error introduced by to_rgb, which makes remapping & dithering more accurate */
 
-        if (!px.a) {
+        if (!px.a && !map->palette[x].fixed) {
             px.r = 'L'; px.g = 'i'; px.b = 'q';
         }
 
@@ -1059,15 +1069,15 @@ inline static f_pixel get_dithered_pixel(const float dither_level, const float m
          if (a > 1.0) { a = 1.0; }
     else if (a < 0)   { a = 0; }
 
-    // If dithering error is crazy high, don't propagate it that much
-    // This prevents crazy geen pixels popping out of the blue (or red or black! ;)
-    const float dither_error = sr*sr + sg*sg + sb*sb + sa*sa;
-    if (dither_error > max_dither_error) {
-        ratio *= 0.8;
-    } else if (dither_error < 2.f/256.f/256.f) {
+     // If dithering error is crazy high, don't propagate it that much
+     // This prevents crazy geen pixels popping out of the blue (or red or black! ;)
+     const float dither_error = sr*sr + sg*sg + sb*sb + sa*sa;
+     if (dither_error > max_dither_error) {
+         ratio *= 0.8;
+     } else if (dither_error < 2.f/256.f/256.f) {
         // don't dither areas that don't have noticeable error — makes file smaller
         return px;
-    }
+     }
 
      return (f_pixel){
          .r=px.r + sr * ratio,
@@ -1337,6 +1347,9 @@ LIQ_NONNULL static void contrast_maps(liq_image *image)
     unsigned char *restrict tmp = image->malloc(cols*rows);
 
     if (!noise || !edges || !tmp) {
+		image->free(noise);
+        image->free(edges);
+		image->free(tmp);
         return;
     }
 
@@ -1454,6 +1467,9 @@ LIQ_NONNULL static void update_dither_map(unsigned char *const *const row_pointe
     input_image->edges = NULL;
 }
 
+/**
+ * Palette can be NULL, in which case it creates a new palette from scratch.
+ */
 static colormap *add_fixed_colors_to_palette(colormap *palette, const int max_colors, const f_pixel fixed_colors[], const int fixed_colors_count, void* (*malloc)(size_t), void (*free)(void*))
 {
     if (!fixed_colors_count) return palette;
@@ -1562,6 +1578,18 @@ static colormap *find_best_palette(histogram *hist, const liq_attr *options, con
     return acolormap;
 }
 
+static colormap *histogram_to_palette(const histogram *hist, const liq_attr *options) {
+    if (!hist->size) {
+        return NULL;
+    }
+    colormap *acolormap = pam_colormap(hist->size, options->malloc, options->free);
+    for(unsigned int i=0; i < hist->size; i++) {
+        acolormap->palette[i].acolor = hist->achv[i].acolor;
+        acolormap->palette[i].popularity = hist->achv[i].perceptual_weight;
+    }
+    return acolormap;
+}
+
 LIQ_NONNULL static liq_result *pngquant_quantize(histogram *hist, const liq_attr *options, const liq_image *img)
 {
     colormap *acolormap;
@@ -1574,12 +1602,7 @@ LIQ_NONNULL static liq_result *pngquant_quantize(histogram *hist, const liq_attr
     // If image has few colors to begin with (and no quality degradation is required)
     // then it's possible to skip quantization entirely
     if (few_input_colors && options->target_mse == 0) {
-        acolormap = pam_colormap(hist->size, options->malloc, options->free);
-        for(unsigned int i=0; i < hist->size; i++) {
-            acolormap->palette[i].acolor = hist->achv[i].acolor;
-            acolormap->palette[i].popularity = hist->achv[i].perceptual_weight;
-        }
-        acolormap = add_fixed_colors_to_palette(acolormap, options->max_colors, img->fixed_colors, img->fixed_colors_count, options->malloc, options->free);
+        acolormap = add_fixed_colors_to_palette(histogram_to_palette(hist, options), options->max_colors, img->fixed_colors, img->fixed_colors_count, options->malloc, options->free);
         palette_error = 0;
     } else {
         const double max_mse = options->max_mse * (few_input_colors ? 0.33 : 1.0); // when degrading image that's already paletted, require much higher improvement, since pal2pal often looks bad and there's little gain
