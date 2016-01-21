@@ -52,6 +52,15 @@ $(TESTBIN): test/test.o $(STATICLIB)
 test: $(BIN) $(TESTBIN)
 	./test/test.sh ./test $(BIN) $(TESTBIN)
 
+bin.shared: $(OBJS) $(SHAREDLIB)
+	$(CC) $^ $(CFLAGS) $(LDFLAGS) -o $(BIN)
+
+testbin.shared: test/test.o $(SHAREDLIB)
+	$(CC) $^ $(CFLAGS) $(LDFLAGS) -o $(TESTBIN)
+
+test.shared: bin.shared testbin.shared
+	./test/test.sh ./test $(BIN) $(TESTBIN)
+
 dist: $(TARFILE)
 
 $(TARFILE): $(DISTFILES)
@@ -63,14 +72,15 @@ $(TARFILE): $(DISTFILES)
 	rm -rf $(TARNAME)
 	-shasum $(TARFILE)
 
-install: $(BIN) pngquant.1
+install: $(BIN) $(BIN).1
 	-mkdir -p '$(BINPREFIX)'
 	-mkdir -p '$(MANPREFIX)/man1'
 	install -m 0755 -p '$(BIN)' '$(BINPREFIX)/$(BIN)'
-	cp pngquant.1 '$(MANPREFIX)/man1/'
+	install -m 0644 -p '$(BIN).1' '$(MANPREFIX)/man1/'
 
 uninstall:
 	rm -f '$(BINPREFIX)/$(BIN)'
+	rm -f '$(MANPREFIX)/man1/$(BIN).1'
 
 clean:
 	$(MAKE) -C lib clean
